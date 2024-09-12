@@ -1,9 +1,9 @@
-import os
 from flask import Flask,jsonify,request,send_from_directory
 from flask_cors import CORS
 from googletrans import Translator
 from werkzeug.utils import secure_filename
-from helper import *
+import PyPDF2,os
+from fpdf import FPDF
 
 UPLOAD_FOLDER = 'files'
 TRANSLATED_FOLDER = 'translated_files'
@@ -13,9 +13,39 @@ app = Flask(__name__)
 cors = CORS(app,origins="*")
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['TRANSLATED_FOLDER'] = TRANSLATED_FOLDER
-
+translator = Translator()
 client_folder = os.path.join(os.getcwd(),"..","client")
 dist_folder = os.path.join(client_folder,"dist")
+
+def translate_txt(filename:str,dest_lang:str):
+    file_path = os.path.join(app.config[UPLOAD_FOLDER], filename)
+    with open(file_path,"r",encoding='utf-8') as file_obj:
+        content = file_obj.read()
+    translated_content = translator.translate(content,dest=dest_lang)
+
+    translated_file_path = os.path.join(app.config[TRANSLATED_FOLDER], f"translated_{filename}")
+    with open(translated_file_path, "w", encoding='utf-8') as file_obj:
+        file_obj.write(translated_content.text)
+
+    return translated_content.text, translated_file_path
+
+def translate_pdf(filename:str , dest_lang:str):
+    file_path = os.path.join(app.config[UPLOAD_FOLDER], filename)
+    with open(file_path, "rb") as file_obj:
+        pdf_reader = PyPDF2.PdfFileReader(file_obj)
+        content = ""
+        for page in pdf_reader.pages:
+            content+=page.extract_text()
+    translated_content = translator.translate(content,dest=dest_lang)
+    translated_file_path = os.path.join(app.config[TRANSLATED_FOLDER], f"translated_{filename}")
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.multi_cell(0, 10, translated_content.text)
+    pdf.output(translated_file_path)
+
+    return translated_content.text, translated_file_path
+
 
 @app.route("/",defaults={"filename":""})
 @app.route("/<path:filename>")
@@ -23,9 +53,6 @@ def index(filename):
     if not filename:
         filename = "index.html"
     return send_from_directory(dist_folder,filename)
-
-
-translator = Translator()
 
 @app.route('/api/translate-text',methods=["POST"])
 def translate_text():
